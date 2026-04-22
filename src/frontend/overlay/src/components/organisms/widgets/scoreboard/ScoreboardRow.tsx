@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useCallback, useLayoutEffect } from "react";
+import React, {useRef, useEffect, useCallback, useLayoutEffect, RefObject} from "react";
 import styled from "styled-components";
 import c from "@/config";
 import { TaskResultLabel, RankLabel } from "@/components/atoms/ContestLabels";
@@ -226,6 +226,195 @@ function calcCurrentAnimatedPos(
     return interpolate(animatingInfo.fromPos, targetPos, progress);
 }
 
+function useAnimatedPosRef(
+    animatingInfo: AnimatingTeam | undefined,
+    targetPos: number,
+) {
+    return useRef<number>(
+        calcCurrentAnimatedPos(animatingInfo, targetPos),
+    );
+}
+
+function useUpdateTransform(
+    scoreboardRowPadding: number,
+    rowRef: RefObject<HTMLDivElement>,
+    animatedPosRef: RefObject<number>,
+    rowHeightRef: RefObject<number>,
+    getScrollPosRef: RefObject<() => number>
+) {
+    const lastVisualPosRef = useRef<number | null>(null);
+    return useCallback(() => {
+        if (rowRef.current) {
+            const visualPos =
+                (animatedPosRef.current - getScrollPosRef.current()) *
+                rowHeightRef.current -
+                scoreboardRowPadding;
+
+            const roundedPos = Math.round(visualPos);
+
+            if (lastVisualPosRef.current !== roundedPos) {
+                lastVisualPosRef.current = roundedPos;
+                rowRef.current.style.transform = `translate3d(0, ${roundedPos}px, 0)`;
+            }
+        }
+    }, []);
+}
+
+function useScrollSubscription(
+    subscribeScroll: (cb: () => void) => () => void,
+    updateTransform: () => void
+) {
+    useEffect(() => {
+        return subscribeScroll(updateTransform);
+    }, [subscribeScroll, updateTransform]);
+}
+
+function useSyncRefs(
+    rowHeight: number,
+    getScrollPos: () => void,
+    rowHeightRef: RefObject<number>,
+    getScrollPosRef: RefObject<() => void>
+) {
+    useLayoutEffect(() => {
+        rowHeightRef.current = rowHeight;
+        getScrollPosRef.current = getScrollPos;
+    });
+}
+
+function useAnimation(
+    scoreboardRowTransitionTime: number,
+    targetPos: number,
+    animatingInfo: AnimatingTeam,
+    updateTransform: () => void,
+    animationRef: RefObject<number>,
+    animatedPosRef: RefObject<number>
+) {
+    useEffect(() => {
+        if (animationRef.current) {
+            cancelAnimationFrame(animationRef.current);
+            animationRef.current = null;
+        }
+
+        if (animatingInfo) {
+            const animate = (_now: number) => {
+                const progress = calculateProgress(
+                    animatingInfo.startTime,
+                    scoreboardRowTransitionTime,
+                );
+
+                animatedPosRef.current = interpolate(
+                    animatingInfo.fromPos,
+                    targetPos,
+                    progress,
+                );
+                updateTransform();
+
+                if (progress < 1) {
+                    animationRef.current = requestAnimationFrame(animate);
+                } else {
+                    animatedPosRef.current = targetPos;
+                    updateTransform();
+                }
+            };
+
+            animationRef.current = requestAnimationFrame(animate);
+
+            return () => {
+                if (animationRef.current) {
+                    cancelAnimationFrame(animationRef.current);
+                    animationRef.current = null;
+                }
+            };
+        } else {
+            const currentPos = animatedPosRef.current;
+            if (Math.abs(currentPos - targetPos) > 0.01) {
+                const startPos = currentPos;
+                const startTime = performance.now();
+
+                const smoothTransition = (now: number) => {
+                    const elapsed = now - startTime;
+                    const progress = Math.min(
+                        elapsed / scoreboardRowTransitionTime,
+                        1,
+                    );
+
+                    animatedPosRef.current = interpolate(
+                        startPos,
+                        targetPos,
+                        progress,
+                    );
+                    updateTransform();
+
+                    if (progress < 1) {
+                        animationRef.current =
+                            requestAnimationFrame(smoothTransition);
+                    }
+                };
+
+                animationRef.current =
+                    requestAnimationFrame(smoothTransition);
+
+                return () => {
+                    if (animationRef.current) {
+                        cancelAnimationFrame(animationRef.current);
+                        animationRef.current = null;
+                    }
+                };
+            } else {
+                animatedPosRef.current = targetPos;
+                updateTransform();
+            }
+        }
+    }, [targetPos, animatingInfo, updateTransform]);
+}
+
+function useUpdateTransformOnLayout(
+    updateTransform: () => void
+) {
+    useLayoutEffect(() => {
+        updateTransform();
+    }, [updateTransform]);
+}
+
+export function useAnimatedRow(
+    scoreboardRowPadding: number,
+    scoreboardRowTransitionTime: number,
+    targetPos: number,
+    rowHeight: number,
+    animatingInfo: AnimatingTeam,
+    getScrollPos: () => number,
+    subscribeScroll: (cb: () => void) => () => void,
+    rowRef: RefObject<HTMLDivElement>
+) {
+    const animatedPosRef = useAnimatedPosRef(animatingInfo, targetPos)
+    const animationRef = useRef<number | null>(null);
+    const rowHeightRef = useRef(rowHeight);
+    const getScrollPosRef = useRef(getScrollPos);
+
+    useSyncRefs(rowHeight, getScrollPos, rowHeightRef, getScrollPosRef);
+
+    const updateTransform = useUpdateTransform(
+        scoreboardRowPadding,
+        rowRef,
+        animatedPosRef,
+        rowHeightRef,
+        getScrollPosRef
+    );
+
+    useScrollSubscription(subscribeScroll, updateTransform)
+
+    useAnimation(
+        scoreboardRowTransitionTime,
+        targetPos,
+        animatingInfo,
+        updateTransform,
+        animationRef,
+        animatedPosRef
+    );
+
+    useUpdateTransformOnLayout(updateTransform);
+}
+
 export const AnimatedRow = React.memo(
     ({
         teamId,
@@ -241,120 +430,16 @@ export const AnimatedRow = React.memo(
         contestData,
     }: AnimatedRowProps) => {
         const rowRef = useRef<HTMLDivElement>(null);
-        const animatedPosRef = useRef<number>(
-            calcCurrentAnimatedPos(animatingInfo, targetPos),
+        useAnimatedRow(
+            c.SCOREBOARD_ROW_PADDING,
+            c.SCOREBOARD_ROW_TRANSITION_TIME,
+            targetPos,
+            rowHeight,
+            animatingInfo,
+            getScrollPos,
+            subscribeScroll,
+            rowRef
         );
-        const animationRef = useRef<number | null>(null);
-        const rowHeightRef = useRef(rowHeight);
-        const getScrollPosRef = useRef(getScrollPos);
-        const lastVisualPosRef = useRef<number | null>(null);
-
-        useLayoutEffect(() => {
-            rowHeightRef.current = rowHeight;
-            getScrollPosRef.current = getScrollPos;
-        });
-
-        const updateTransform = useCallback(() => {
-            if (rowRef.current) {
-                const visualPos =
-                    (animatedPosRef.current - getScrollPosRef.current()) *
-                        rowHeightRef.current -
-                    c.SCOREBOARD_ROW_PADDING;
-
-                const roundedPos = Math.round(visualPos);
-
-                if (lastVisualPosRef.current !== roundedPos) {
-                    lastVisualPosRef.current = roundedPos;
-                    rowRef.current.style.transform = `translate3d(0, ${roundedPos}px, 0)`;
-                }
-            }
-        }, []);
-
-        useEffect(() => {
-            return subscribeScroll(updateTransform);
-        }, [subscribeScroll, updateTransform]);
-
-        useEffect(() => {
-            if (animationRef.current) {
-                cancelAnimationFrame(animationRef.current);
-                animationRef.current = null;
-            }
-
-            if (animatingInfo) {
-                const animate = (_now: number) => {
-                    const progress = calculateProgress(
-                        animatingInfo.startTime,
-                        c.SCOREBOARD_ROW_TRANSITION_TIME,
-                    );
-
-                    animatedPosRef.current = interpolate(
-                        animatingInfo.fromPos,
-                        targetPos,
-                        progress,
-                    );
-                    updateTransform();
-
-                    if (progress < 1) {
-                        animationRef.current = requestAnimationFrame(animate);
-                    } else {
-                        animatedPosRef.current = targetPos;
-                        updateTransform();
-                    }
-                };
-
-                animationRef.current = requestAnimationFrame(animate);
-
-                return () => {
-                    if (animationRef.current) {
-                        cancelAnimationFrame(animationRef.current);
-                        animationRef.current = null;
-                    }
-                };
-            } else {
-                const currentPos = animatedPosRef.current;
-                if (Math.abs(currentPos - targetPos) > 0.01) {
-                    const startPos = currentPos;
-                    const startTime = performance.now();
-
-                    const smoothTransition = (now: number) => {
-                        const elapsed = now - startTime;
-                        const progress = Math.min(
-                            elapsed / c.SCOREBOARD_ROW_TRANSITION_TIME,
-                            1,
-                        );
-
-                        animatedPosRef.current = interpolate(
-                            startPos,
-                            targetPos,
-                            progress,
-                        );
-                        updateTransform();
-
-                        if (progress < 1) {
-                            animationRef.current =
-                                requestAnimationFrame(smoothTransition);
-                        }
-                    };
-
-                    animationRef.current =
-                        requestAnimationFrame(smoothTransition);
-
-                    return () => {
-                        if (animationRef.current) {
-                            cancelAnimationFrame(animationRef.current);
-                            animationRef.current = null;
-                        }
-                    };
-                } else {
-                    animatedPosRef.current = targetPos;
-                    updateTransform();
-                }
-            }
-        }, [targetPos, animatingInfo, updateTransform]);
-
-        useLayoutEffect(() => {
-            updateTransform();
-        }, [updateTransform]);
 
         return (
             <PositionedScoreboardRowDiv
