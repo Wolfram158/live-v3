@@ -17,7 +17,7 @@ import {
     useScoreboardData,
 } from "./hooks/useScoreboardData";
 import { useScroller, useAnimatedScrollPos } from "./hooks/useScoreboardScroll";
-import { useAnimatingTeams } from "./hooks/useScoreboardAnimation";
+import {AnimatingTeam, useAnimatingTeams} from "./hooks/useScoreboardAnimation";
 
 const ScoreboardWrap = styled.div`
     overflow: hidden;
@@ -59,23 +59,36 @@ interface ScoreboardRowsProps {
     onPage: number;
 }
 
-const ScoreboardRows = ({ settings, onPage }: ScoreboardRowsProps) => {
-    const rows = useScoreboardRows(settings.optimismLevel, settings.group);
-    const rowHeight = c.SCOREBOARD_ROW_HEIGHT + c.SCOREBOARD_ROW_PADDING;
+function useTeamsToRender(
+    rows: [string, number][],
+    visibleTeams: Set<string>
+) {
+    return useMemo(() => {
+        return rows.filter(([teamId]) => visibleTeams.has(teamId));
+    }, [rows, visibleTeams]);
+}
 
-    const targetScrollPos = useScroller(
-        rows.length,
+interface UseTeamsHookParams {
+    onPage: number,
+    targetScrollPos: number,
+    scoreboardRowTransitionTime: number,
+    rows: [string, number][],
+    animatingTeams: Map<string, AnimatingTeam>
+}
+
+interface UseTeamsHookResult {
+    teamsToRender: [string, number][]
+}
+
+export function useTeams(
+    {
         onPage,
-        c.SCOREBOARD_SCROLL_INTERVAL,
-        settings.scrollDirection,
-    );
-
-    const { getScrollPos, subscribe } = useAnimatedScrollPos(targetScrollPos);
-    const { scoreboardData, normalScoreboardData, contestData } =
-        useScoreboardData(settings.optimismLevel);
-
-    const animatingTeams = useAnimatingTeams(rows);
-
+        targetScrollPos,
+        rows,
+        animatingTeams,
+        scoreboardRowTransitionTime
+    }: UseTeamsHookParams
+): UseTeamsHookResult {
     const [prevWindow, setPrevWindow] = useState({
         scrollPos: targetScrollPos,
         onPage,
@@ -119,13 +132,39 @@ const ScoreboardRows = ({ settings, onPage }: ScoreboardRowsProps) => {
             startTransition(() =>
                 setPrevWindow({ scrollPos: targetScrollPos, onPage }),
             );
-        }, c.SCOREBOARD_ROW_TRANSITION_TIME);
+        }, scoreboardRowTransitionTime);
         return () => clearTimeout(timeout);
     }, [targetScrollPos, onPage]);
 
-    const teamsToRender = useMemo(() => {
-        return rows.filter(([teamId]) => visibleTeams.has(teamId));
-    }, [rows, visibleTeams]);
+    const teamsToRender = useTeamsToRender(rows, visibleTeams);
+
+    return { teamsToRender }
+}
+
+const ScoreboardRows = ({ settings, onPage }: ScoreboardRowsProps) => {
+    const rows = useScoreboardRows(settings.optimismLevel, settings.group);
+    const rowHeight = c.SCOREBOARD_ROW_HEIGHT + c.SCOREBOARD_ROW_PADDING;
+
+    const targetScrollPos = useScroller(
+        rows.length,
+        onPage,
+        c.SCOREBOARD_SCROLL_INTERVAL,
+        settings.scrollDirection,
+    );
+
+    const { getScrollPos, subscribe } = useAnimatedScrollPos(targetScrollPos);
+    const { scoreboardData, normalScoreboardData, contestData } =
+        useScoreboardData(settings.optimismLevel);
+
+    const animatingTeams = useAnimatingTeams(rows);
+
+    const { teamsToRender } = useTeams({
+        animatingTeams: animatingTeams,
+        onPage: onPage,
+        rows: rows,
+        scoreboardRowTransitionTime: c.SCOREBOARD_ROW_TRANSITION_TIME,
+        targetScrollPos: targetScrollPos
+    });
 
     const effectiveOnPage = Math.max(1, onPage);
 
