@@ -73,7 +73,7 @@ export function useScroller(
     return scrollPos;
 }
 
-export function useAnimatedScrollPos(targetScrollPos: number) {
+export function useAnimatedScrollPos(targetScrollPos: number, scoreboardRowTransitionTime: number) {
     const scrollPosRef = useRef(targetScrollPos);
     const animationRef = useRef<number | null>(null);
     const startTimeRef = useRef<number>(0);
@@ -97,8 +97,7 @@ export function useAnimatedScrollPos(targetScrollPos: number) {
 
         const animate = (now: number) => {
             const elapsed = now - startTimeRef.current;
-            const duration = c.SCOREBOARD_ROW_TRANSITION_TIME;
-            const progress = Math.min(elapsed / duration, 1);
+            const progress = Math.min(elapsed / scoreboardRowTransitionTime, 1);
 
             scrollPosRef.current =
                 startPosRef.current +

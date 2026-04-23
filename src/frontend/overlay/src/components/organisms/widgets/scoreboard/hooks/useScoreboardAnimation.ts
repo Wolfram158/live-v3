@@ -7,7 +7,7 @@ export type AnimatingTeam = {
     startTime: number;
 };
 
-export function useAnimatingTeams(rows: [string, number][]) {
+export function useAnimatingTeams(rows: [string, number][], scoreboardRowTransitionTime: number) {
     const [animatingTeams, setAnimatingTeams] = useState<
         Map<string, AnimatingTeam>
     >(new Map());
@@ -55,7 +55,7 @@ export function useAnimatingTeams(rows: [string, number][]) {
                     for (const [k, v] of prev) {
                         if (
                             now - v.startTime <
-                            c.SCOREBOARD_ROW_TRANSITION_TIME
+                            scoreboardRowTransitionTime
                         ) {
                             filtered.set(k, v);
                         }
@@ -63,7 +63,7 @@ export function useAnimatingTeams(rows: [string, number][]) {
                     return filtered;
                 });
             });
-        }, c.SCOREBOARD_ROW_TRANSITION_TIME);
+        }, scoreboardRowTransitionTime);
 
         return () => clearTimeout(timeout);
     }, [animatingTeams]);

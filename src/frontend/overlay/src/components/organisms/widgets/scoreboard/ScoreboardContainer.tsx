@@ -152,11 +152,11 @@ const ScoreboardRows = ({ settings, onPage }: ScoreboardRowsProps) => {
         settings.scrollDirection,
     );
 
-    const { getScrollPos, subscribe } = useAnimatedScrollPos(targetScrollPos);
+    const { getScrollPos, subscribe } = useAnimatedScrollPos(targetScrollPos, c.SCOREBOARD_ROW_TRANSITION_TIME);
     const { scoreboardData, normalScoreboardData, contestData } =
         useScoreboardData(settings.optimismLevel);
 
-    const animatingTeams = useAnimatingTeams(rows);
+    const animatingTeams = useAnimatingTeams(rows, c.SCOREBOARD_ROW_TRANSITION_TIME);
 
     const { teamsToRender } = useTeams({
         animatingTeams: animatingTeams,

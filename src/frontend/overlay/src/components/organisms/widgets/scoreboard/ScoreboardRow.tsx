@@ -215,12 +215,13 @@ interface AnimatedRowProps {
 function calcCurrentAnimatedPos(
     animatingInfo: AnimatingTeam | undefined,
     targetPos: number,
+    scoreboardRowTransitionTime: number
 ): number {
     if (!animatingInfo) return targetPos;
 
     const progress = calculateProgress(
         animatingInfo.startTime,
-        c.SCOREBOARD_ROW_TRANSITION_TIME,
+        scoreboardRowTransitionTime,
     );
 
     return interpolate(animatingInfo.fromPos, targetPos, progress);
@@ -231,7 +232,7 @@ function useAnimatedPosRef(
     targetPos: number,
 ) {
     return useRef<number>(
-        calcCurrentAnimatedPos(animatingInfo, targetPos),
+        calcCurrentAnimatedPos(animatingInfo, targetPos, c.SCOREBOARD_ROW_TRANSITION_TIME)
     );
 }
 
